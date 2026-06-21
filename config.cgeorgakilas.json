@@ -1,0 +1,205 @@
+{
+  "paths": {
+    "prompt_learning_root": "/home-local/cgeorgakilas/task_vectors-main",
+    "dataset_code_root": "./datasets",
+    "data_location": "/data/125-1/users/cgeorgakilas/task_datasets",
+    "checkpoints_root": "./artifacts/checkpoints",
+    "results_root": "./artifacts/results",
+    "openclip_cache_dir": "/home-local/cgeorgakilas/.cache/open_clip",
+    "logs_root": "./artifacts/logs"
+  },
+  "runtime": {
+    "device": "cuda",
+    "seed": 0,
+    "num_workers": 4,
+    "print_every": 100,
+    "show_progress": true,
+    "offline_datasets": true
+  },
+  "scheduler": {
+    "gpus": null,
+    "max_parallel": 4,
+    "poll_seconds": 2
+  },
+  "models": [
+    {
+      "id": "ViT-B-32",
+      "name": "ViT-B-32",
+      "pretrained": "openai"
+    }
+  ],
+  "datasets": [
+    {
+      "name": "Cars",
+      "train_dataset": "CarsVal",
+      "eval_dataset": "Cars",
+      "prompt_epochs": 50,
+      "vision_epochs": 35
+    },
+    {
+      "name": "CIFAR10",
+      "train_dataset": "CIFAR10Val",
+      "eval_dataset": "CIFAR10",
+      "prompt_epochs": 30,
+      "vision_epochs": 10
+    },
+    {
+      "name": "CIFAR100",
+      "train_dataset": "CIFAR100Val",
+      "eval_dataset": "CIFAR100",
+      "prompt_epochs": 30,
+      "vision_epochs": 10
+    },
+    {
+      "name": "DTD",
+      "train_dataset": "DTDVal",
+      "eval_dataset": "DTD",
+      "prompt_epochs": 90,
+      "vision_epochs": 76
+    },
+    {
+      "name": "EMNIST",
+      "train_dataset": "EMNISTVal",
+      "eval_dataset": "EMNIST",
+      "prompt_epochs": 10,
+      "vision_epochs": 5
+    },
+    {
+      "name": "EuroSAT",
+      "train_dataset": "EuroSATVal",
+      "eval_dataset": "EuroSAT",
+      "prompt_epochs": 30,
+      "vision_epochs": 12
+    },
+    {
+      "name": "FER2013",
+      "train_dataset": "FER2013Val",
+      "eval_dataset": "FER2013",
+      "prompt_epochs": 30,
+      "vision_epochs": 10
+    },
+    {
+      "name": "FashionMNIST",
+      "train_dataset": "FashionMNISTVal",
+      "eval_dataset": "FashionMNIST",
+      "prompt_epochs": 10,
+      "vision_epochs": 5
+    },
+    {
+      "name": "Flowers102",
+      "train_dataset": "Flowers102Val",
+      "eval_dataset": "Flowers102",
+      "prompt_epochs": 30,
+      "vision_epochs": 10
+    },
+    {
+      "name": "Food101",
+      "train_dataset": "Food101Val",
+      "eval_dataset": "Food101",
+      "prompt_epochs": 30,
+      "vision_epochs": 10
+    },
+    {
+      "name": "GTSRB",
+      "train_dataset": "GTSRBVal",
+      "eval_dataset": "GTSRB",
+      "prompt_epochs": 30,
+      "vision_epochs": 11
+    },
+    {
+      "name": "KMNIST",
+      "train_dataset": "KMNISTVal",
+      "eval_dataset": "KMNIST",
+      "prompt_epochs": 10,
+      "vision_epochs": 5
+    },
+    {
+      "name": "MNIST",
+      "train_dataset": "MNISTVal",
+      "eval_dataset": "MNIST",
+      "prompt_epochs": 10,
+      "vision_epochs": 5
+    },
+    {
+      "name": "OxfordIIITPet",
+      "train_dataset": "OxfordIIITPetVal",
+      "eval_dataset": "OxfordIIITPet",
+      "prompt_epochs": 30,
+      "vision_epochs": 10
+    },
+    {
+      "name": "PCAM",
+      "train_dataset": "PCAMVal",
+      "eval_dataset": "PCAM",
+      "prompt_epochs": 30,
+      "vision_epochs": 10
+    },
+    {
+      "name": "RESISC45",
+      "train_dataset": "RESISC45Val",
+      "eval_dataset": "RESISC45",
+      "prompt_epochs": 30,
+      "vision_epochs": 15
+    },
+    {
+      "name": "RenderedSST2",
+      "train_dataset": "RenderedSST2Val",
+      "eval_dataset": "RenderedSST2",
+      "prompt_epochs": 10,
+      "vision_epochs": 5
+    },
+    {
+      "name": "STL10",
+      "train_dataset": "STL10Val",
+      "eval_dataset": "STL10",
+      "prompt_epochs": 30,
+      "vision_epochs": 10
+    },
+    {
+      "name": "SUN397",
+      "train_dataset": "SUN397Val",
+      "eval_dataset": "SUN397",
+      "prompt_epochs": 30,
+      "vision_epochs": 14
+    },
+    {
+      "name": "SVHN",
+      "train_dataset": "SVHNVal",
+      "eval_dataset": "SVHN",
+      "prompt_epochs": 10,
+      "vision_epochs": 4
+    }
+  ],
+  "prompt_training": {
+    "n_ctx": 16,
+    "weight_decay": 0.1,
+    "track_flops": true,
+    "runs": [
+      {
+        "id": "bs128_wu500_lr1e-3",
+        "batch_size": 128,
+        "warmup_length": 500,
+        "lr": 0.001
+      }
+    ]
+  },
+  "vision_training": {
+    "batch_size": 128,
+    "warmup_length": 500,
+    "lr": 0.00001,
+    "weight_decay": 0.1,
+    "label_smoothing": 0.0,
+    "track_flops": true,
+    "dte_prompt_runs": [
+      "bs128_wu500_lr1e-3"
+    ]
+  },
+  "evaluation": {
+    "batch_size": 128,
+    "merge_datasets": null,
+    "prompt_average_source_datasets": null,
+    "prompt_average_runs": [
+      "bs128_wu500_lr1e-3"
+    ]
+  }
+}
