@@ -3,7 +3,7 @@
     "prompt_learning_root": "/home-local/cgeorgakilas/task_vectors-main",
     "dataset_code_root": "./datasets",
     "data_location": "/data/125-1/users/cgeorgakilas/task_datasets",
-    "checkpoints_root": "./artifacts/checkpoints",
+    "checkpoints_root": "/data/125-1/users/cgeorgakilas/samir_stuff/checkpoints",
     "results_root": "./artifacts/results",
     "openclip_cache_dir": "/home-local/cgeorgakilas/.cache/open_clip",
     "logs_root": "./artifacts/logs"

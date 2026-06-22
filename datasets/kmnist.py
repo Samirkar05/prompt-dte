@@ -1,70 +1,51 @@
 import os
+from pathlib import Path
+
 import torch
-from torch.utils.data import Dataset, DataLoader
-from datasets import DownloadConfig, load_dataset
-from PIL import Image
-import numpy as np
-
-
-class HFKMNISTDataset(Dataset):
-    """Wraps the HuggingFace tanganke/kmnist dataset to behave like torchvision KMNIST."""
-
-    CLASSES = ['お', 'き', 'す', 'つ', 'な', 'は', 'ま', 'や', 'れ', 'を']
-
-    def __init__(self, hf_split, transform=None):
-        self.data = hf_split
-        self.transform = transform
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        sample = self.data[idx]
-
-        # HF stores the image as a PIL Image under the 'image' key
-        img = sample['image']
-
-        # Torchvision KMNIST is grayscale — ensure mode is 'L'
-        if img.mode != 'L':
-            img = img.convert('L')
-
-        if self.transform is not None:
-            img = self.transform(img)
-
-        label = sample['label']
-        return img, label
+import torchvision.datasets as datasets
 
 
 class KMNIST:
+    CLASSNAMES = ['お', 'き', 'す', 'つ', 'な', 'は', 'ま', 'や', 'れ', 'を']
+
     def __init__(
         self,
         preprocess,
-        location=os.path.expanduser("~/data"),  # kept for interface compatibility
+        location=os.path.expanduser("~/data"),
         batch_size=128,
         num_workers=6,
     ):
-        # Load from HF cache (no re-download if already cached)
-        ds = load_dataset(
-            "tanganke/kmnist",
-            cache_dir=location,
-            download_config=DownloadConfig(local_files_only=True),
-        )
+        roots = [Path(location), Path(location) / "KMNIST", Path(location) / "kmnist"]
+        errors = []
+        for root in roots:
+            try:
+                train_dataset = datasets.KMNIST(
+                    root=str(root), download=False, train=True, transform=preprocess
+                )
+                test_dataset = datasets.KMNIST(
+                    root=str(root), download=False, train=False, transform=preprocess
+                )
+                break
+            except RuntimeError as exc:
+                errors.append(f"{root}: {exc}")
+        else:
+            raise FileNotFoundError(
+                "Local Torchvision KMNIST files were not found. Checked:\n"
+                + "\n".join(errors)
+            )
 
-        self.train_dataset = HFKMNISTDataset(ds['train'], transform=preprocess)
-        self.test_dataset  = HFKMNISTDataset(ds['test'],  transform=preprocess)
-
-        self.train_loader = DataLoader(
+        self.train_dataset = train_dataset
+        self.test_dataset = test_dataset
+        self.train_loader = torch.utils.data.DataLoader(
             self.train_dataset,
             batch_size=batch_size,
             shuffle=True,
             num_workers=num_workers,
         )
-
-        self.test_loader = DataLoader(
+        self.test_loader = torch.utils.data.DataLoader(
             self.test_dataset,
             batch_size=batch_size,
             shuffle=False,
             num_workers=num_workers,
         )
-
-        self.classnames = HFKMNISTDataset.CLASSES
+        self.classnames = self.CLASSNAMES
