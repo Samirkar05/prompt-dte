@@ -29,146 +29,26 @@
     }
   ],
   "datasets": [
-    {
-      "name": "Cars",
-      "train_dataset": "CarsVal",
-      "eval_dataset": "Cars",
-      "prompt_epochs": 50,
-      "vision_epochs": 35
-    },
-    {
-      "name": "CIFAR10",
-      "train_dataset": "CIFAR10Val",
-      "eval_dataset": "CIFAR10",
-      "prompt_epochs": 30,
-      "vision_epochs": 10
-    },
-    {
-      "name": "CIFAR100",
-      "train_dataset": "CIFAR100Val",
-      "eval_dataset": "CIFAR100",
-      "prompt_epochs": 30,
-      "vision_epochs": 10
-    },
-    {
-      "name": "DTD",
-      "train_dataset": "DTDVal",
-      "eval_dataset": "DTD",
-      "prompt_epochs": 90,
-      "vision_epochs": 76
-    },
-    {
-      "name": "EMNIST",
-      "train_dataset": "EMNISTVal",
-      "eval_dataset": "EMNIST",
-      "prompt_epochs": 10,
-      "vision_epochs": 5
-    },
-    {
-      "name": "EuroSAT",
-      "train_dataset": "EuroSATVal",
-      "eval_dataset": "EuroSAT",
-      "prompt_epochs": 30,
-      "vision_epochs": 12
-    },
-    {
-      "name": "FER2013",
-      "train_dataset": "FER2013Val",
-      "eval_dataset": "FER2013",
-      "prompt_epochs": 30,
-      "vision_epochs": 10
-    },
-    {
-      "name": "FashionMNIST",
-      "train_dataset": "FashionMNISTVal",
-      "eval_dataset": "FashionMNIST",
-      "prompt_epochs": 10,
-      "vision_epochs": 5
-    },
-    {
-      "name": "Flowers102",
-      "train_dataset": "Flowers102Val",
-      "eval_dataset": "Flowers102",
-      "prompt_epochs": 30,
-      "vision_epochs": 10
-    },
-    {
-      "name": "Food101",
-      "train_dataset": "Food101Val",
-      "eval_dataset": "Food101",
-      "prompt_epochs": 30,
-      "vision_epochs": 10
-    },
-    {
-      "name": "GTSRB",
-      "train_dataset": "GTSRBVal",
-      "eval_dataset": "GTSRB",
-      "prompt_epochs": 30,
-      "vision_epochs": 11
-    },
-    {
-      "name": "KMNIST",
-      "train_dataset": "KMNISTVal",
-      "eval_dataset": "KMNIST",
-      "prompt_epochs": 10,
-      "vision_epochs": 5
-    },
-    {
-      "name": "MNIST",
-      "train_dataset": "MNISTVal",
-      "eval_dataset": "MNIST",
-      "prompt_epochs": 10,
-      "vision_epochs": 5
-    },
-    {
-      "name": "OxfordIIITPet",
-      "train_dataset": "OxfordIIITPetVal",
-      "eval_dataset": "OxfordIIITPet",
-      "prompt_epochs": 30,
-      "vision_epochs": 10
-    },
-    {
-      "name": "PCAM",
-      "train_dataset": "PCAMVal",
-      "eval_dataset": "PCAM",
-      "prompt_epochs": 30,
-      "vision_epochs": 10
-    },
-    {
-      "name": "RESISC45",
-      "train_dataset": "RESISC45Val",
-      "eval_dataset": "RESISC45",
-      "prompt_epochs": 30,
-      "vision_epochs": 15
-    },
-    {
-      "name": "RenderedSST2",
-      "train_dataset": "RenderedSST2Val",
-      "eval_dataset": "RenderedSST2",
-      "prompt_epochs": 10,
-      "vision_epochs": 5
-    },
-    {
-      "name": "STL10",
-      "train_dataset": "STL10Val",
-      "eval_dataset": "STL10",
-      "prompt_epochs": 30,
-      "vision_epochs": 10
-    },
-    {
-      "name": "SUN397",
-      "train_dataset": "SUN397Val",
-      "eval_dataset": "SUN397",
-      "prompt_epochs": 30,
-      "vision_epochs": 14
-    },
-    {
-      "name": "SVHN",
-      "train_dataset": "SVHNVal",
-      "eval_dataset": "SVHN",
-      "prompt_epochs": 10,
-      "vision_epochs": 4
-    }
+    {"name": "Cars", "train_dataset": "CarsVal", "eval_dataset": "Cars", "prompt_epochs": 35, "vision_epochs": 35},
+    {"name": "CIFAR10", "train_dataset": "CIFAR10Val", "eval_dataset": "CIFAR10", "prompt_epochs": 6, "vision_epochs": 6},
+    {"name": "CIFAR100", "train_dataset": "CIFAR100Val", "eval_dataset": "CIFAR100", "prompt_epochs": 6, "vision_epochs": 6},
+    {"name": "DTD", "train_dataset": "DTDVal", "eval_dataset": "DTD", "prompt_epochs": 76, "vision_epochs": 76},
+    {"name": "EMNIST", "train_dataset": "EMNISTVal", "eval_dataset": "EMNIST", "prompt_epochs": 2, "vision_epochs": 2},
+    {"name": "EuroSAT", "train_dataset": "EuroSATVal", "eval_dataset": "EuroSAT", "prompt_epochs": 12, "vision_epochs": 12},
+    {"name": "FER2013", "train_dataset": "FER2013Val", "eval_dataset": "FER2013", "prompt_epochs": 10, "vision_epochs": 10},
+    {"name": "FashionMNIST", "train_dataset": "FashionMNISTVal", "eval_dataset": "FashionMNIST", "prompt_epochs": 5, "vision_epochs": 5},
+    {"name": "Flowers102", "train_dataset": "Flowers102Val", "eval_dataset": "Flowers102", "prompt_epochs": 147, "vision_epochs": 147},
+    {"name": "Food101", "train_dataset": "Food101Val", "eval_dataset": "Food101", "prompt_epochs": 4, "vision_epochs": 4},
+    {"name": "GTSRB", "train_dataset": "GTSRBVal", "eval_dataset": "GTSRB", "prompt_epochs": 11, "vision_epochs": 11},
+    {"name": "KMNIST", "train_dataset": "KMNISTVal", "eval_dataset": "KMNIST", "prompt_epochs": 5, "vision_epochs": 5},
+    {"name": "MNIST", "train_dataset": "MNISTVal", "eval_dataset": "MNIST", "prompt_epochs": 5, "vision_epochs": 5},
+    {"name": "OxfordIIITPet", "train_dataset": "OxfordIIITPetVal", "eval_dataset": "OxfordIIITPet", "prompt_epochs": 82, "vision_epochs": 82},
+    {"name": "PCAM", "train_dataset": "PCAMVal", "eval_dataset": "PCAM", "prompt_epochs": 1, "vision_epochs": 1},
+    {"name": "RESISC45", "train_dataset": "RESISC45Val", "eval_dataset": "RESISC45", "prompt_epochs": 15, "vision_epochs": 15},
+    {"name": "RenderedSST2", "train_dataset": "RenderedSST2Val", "eval_dataset": "RenderedSST2", "prompt_epochs": 39, "vision_epochs": 39},
+    {"name": "STL10", "train_dataset": "STL10Val", "eval_dataset": "STL10", "prompt_epochs": 60, "vision_epochs": 60},
+    {"name": "SUN397", "train_dataset": "SUN397Val", "eval_dataset": "SUN397", "prompt_epochs": 14, "vision_epochs": 14},
+    {"name": "SVHN", "train_dataset": "SVHNVal", "eval_dataset": "SVHN", "prompt_epochs": 4, "vision_epochs": 4}
   ],
   "prompt_training": {
     "n_ctx": 16,
