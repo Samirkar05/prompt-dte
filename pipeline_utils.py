@@ -64,6 +64,10 @@ def load_config(config_path: str) -> Tuple[Dict[str, Any], Path]:
     prompt_runs = config.get("prompt_training", {}).get("runs")
     if not prompt_runs:
         raise ValueError("Configuration requires prompt_training.runs.")
+    vision_training = config.setdefault("vision_training", {})
+    vision_training.setdefault("run_visionft", False)
+    if not isinstance(vision_training["run_visionft"], bool):
+        raise ValueError("vision_training.run_visionft must be true or false.")
 
     for model in config["models"]:
         if not isinstance(model, dict) or not model.get("name"):

@@ -184,6 +184,7 @@
     ]
   },
   "vision_training": {
+    "run_visionft": true,
     "batch_size": 128,
     "warmup_length": 500,
     "lr": 0.00001,

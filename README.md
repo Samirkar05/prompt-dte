@@ -72,6 +72,11 @@ Run prompt training, DTE training, and VisionFT training in sequence:
 python scheduler.py --config config.json --stage all
 ```
 
+`--stage all` includes normal-head VisionFT for every configured dataset when
+`vision_training.run_visionft` is `true`. Set it to `false` to run only prompt
+training and DTE. An explicit `--stage VisionFT` command runs VisionFT regardless
+of this switch.
+
 Run individual stages:
 
 ```bash

@@ -646,7 +646,12 @@ def main() -> None:
             config,
             args.dry_run,
         )
-    if args.stage in {"all", "vision", "VisionFT"}:
+    run_configured_visionft = bool(
+        config.get("vision_training", {}).get("run_visionft", False)
+    )
+    if args.stage == "VisionFT" or (
+        args.stage in {"all", "vision"} and run_configured_visionft
+    ):
         run_tasks(
             visionft_tasks(
                 config,
@@ -658,6 +663,8 @@ def main() -> None:
             config,
             args.dry_run,
         )
+    elif args.stage in {"all", "vision"}:
+        print("[SKIP] VisionFT disabled by vision_training.run_visionft=false")
 
 
 if __name__ == "__main__":
