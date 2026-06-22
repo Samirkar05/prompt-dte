@@ -6,7 +6,7 @@ from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
-from datasets import DownloadConfig, load_dataset
+from datasets import load_dataset
 
 
 class CustomFER2013Dataset(Dataset):
@@ -42,12 +42,10 @@ class FER2013:
         #location = os.path.join("~/data", "FER2013")
 
         # Load the FER2013 dataset using Hugging Face datasets library
-        download_config = DownloadConfig(local_files_only=True)
         fer2013 = load_dataset(
             "Jeneral/fer-2013",
             split="train",
             cache_dir=location,
-            download_config=download_config,
         )
 
         # Instantiate the custom PyTorch training dataset
@@ -66,7 +64,6 @@ class FER2013:
             "Jeneral/fer-2013",
             split="test",
             cache_dir=location,
-            download_config=download_config,
         )
 
         # Instantiate the custom PyTorch test dataset

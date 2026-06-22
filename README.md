@@ -32,7 +32,7 @@ Datasets are never hardcoded in the scripts. Each configured dataset supplies:
 
 New datasets work after their implementations, templates, and registry entries are available under the configured `dataset_code_root`.
 
-The copied dataset registry is mounted ahead of `prompt_learning/src/datasets`, so these local definitions are used without modifying the original project. Dataset downloads are disabled. FER2013 additionally requires the Hugging Face `datasets` package and an existing offline cache under its configured data root. KMNIST uses local Torchvision files.
+The copied dataset registry is mounted ahead of `prompt_learning/src/datasets`, so these local definitions are used without modifying the original project. Torchvision dataset downloads are disabled. KMNIST and FER2013 use the Hugging Face `datasets` package and cache under their configured data root.
 
 The four copied loaders requiring new official-validation handling are DTD, Flowers102, PCAM, and RenderedSST2. Their `*Val` names use official validation data rather than splitting training data. Existing explicit validation support for EuroSAT and RESISC45 is also retained.
 

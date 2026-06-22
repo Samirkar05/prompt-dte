@@ -21,7 +21,7 @@ The copied loaders resolve the following locations relative to that root:
 | Flowers102 | `flowers102/` with Torchvision train, val, and test split files |
 | Food101 | `food101/` with Torchvision Food101 files |
 | GTSRB | `gtsrb/` |
-| KMNIST | Local Torchvision KMNIST files under the root, `KMNIST/`, or `kmnist/` |
+| KMNIST | Hugging Face `tanganke/kmnist`, cached under the configured root |
 | MNIST | Torchvision MNIST files under the root |
 | OxfordIIITPet | `OxfordIIITPet/` |
 | PCAM | `PCAM/` with train, val, and test HDF5 files |
@@ -48,7 +48,7 @@ Every other configured `*Val` name deterministically takes 10% of the training s
 
 ## Offline Behavior
 
-All Torchvision loaders use `download=False`. FER2013 uses Hugging Face with local-files-only and offline environment variables. The target environment therefore needs the `datasets` Python package even though no network download is performed.
+All Torchvision loaders use `download=False`. KMNIST and FER2013 use Hugging Face and cache files under their configured data root. The target environment therefore needs the `datasets` Python package and Hub access when those caches are initially populated.
 
 Validate the complete setup as the target user before training:
 

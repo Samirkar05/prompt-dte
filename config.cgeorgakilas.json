@@ -14,7 +14,7 @@
     "num_workers": 4,
     "print_every": 100,
     "show_progress": true,
-    "offline_datasets": true
+    "offline_datasets": false
   },
   "scheduler": {
     "gpus": null,
