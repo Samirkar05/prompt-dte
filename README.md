@@ -153,6 +153,38 @@ python evaluate.py \
 
 Use `--merge-datasets` to control which DTE encoders are merged and `--prompt-source-datasets` or `--prompt-runs` to control prompt averaging.
 
+## Budget Scheduler
+
+Run the four-stage budget experiment:
+
+```bash
+python budget_scheduler.py --config config.json
+```
+
+Stages are `prompt`, `VisionFT`, `budget`, and `evaluate`; `all` is the default.
+Use `--dry-run` to preview scheduled training commands and `--force` to recompute existing artifacts.
+Every budget run is isolated under `budget_runs/<experiment-id>/`; without `--experiment-id`, `all` and `prompt` create a new timestamped experiment, while later single stages reuse the latest budget experiment.
+The `evaluate` stage runs cached pre-validation by default: VisionFT, prompt learning, and dataset-specific DTE. Disable it with `--no-pre-val`.
+During `evaluate`, the LaTeX table is refreshed immediately after each new result row is written.
+
+Resume or evaluate a specific budget run:
+
+```bash
+python budget_scheduler.py --config config.json --stage evaluate --experiment-id budget_YYYYMMDD_HHMMSS_microseconds
+```
+
+Budget definitions:
+
+- Even dataset budget: `mean(VisionFT backward FLOPs to best) - mean(prompt backward FLOPs to best)`.
+- Per dataset budget: `VisionFT backward FLOPs to best - prompt backward FLOPs to best` for each dataset.
+- Budgeted DTE iterations: `budget / VisionFT backward FLOPs per iteration`, floored to full iterations.
+- Negative per-dataset budget: skip that dataset’s DTE encoder for merging and train a budget-limited prompt head instead.
+
+Budget merge evaluation writes one row per dataset/method to `<results_root>/budget_runs/<experiment-id>/<model>/budget_evaluations.jsonl`.
+Merged budget encoders are saved under `<checkpoints_root>/budget_runs/<experiment-id>/<model>/merged/budget/`.
+The continuously refreshed LaTeX tables are written to `<logs_root>/budget_runs/<experiment-id>/<model>/budget_results_table.txt` and `.tex`.
+The table uses fixed task subsets: 8 tasks (`EuroSAT`, `DTD`, `Cars`, `SUN397`, `SVHN`, `RESISC45`, `MNIST`, `GTSRB`), 14 tasks, and all 20 configured tasks.
+
 ## Artifacts
 
 All locations derive from the configuration:

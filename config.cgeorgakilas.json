@@ -82,5 +82,22 @@
     "prompt_average_runs": [
       "bs128_wu500_lr1e-3"
     ]
+  },
+  "budget_scheduler": {
+    "experiment_id": null,
+    "namespace_outputs": true,
+    "pre_val": true,
+    "prompt_run": "bs128_wu500_lr1e-3",
+    "merge_methods": [
+      "task_arithmetic",
+      "weight_average",
+      "tsv_m",
+      "iso_c"
+    ],
+    "merge": {
+      "task_arithmetic_scale": null,
+      "tsv_m_scale": 1.0,
+      "iso_c_scale": 1.0
+    }
   }
 }

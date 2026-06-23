@@ -40,6 +40,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", required=True)
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--prompt-run", default=None)
+    parser.add_argument("--output-mode", default=None)
+    parser.add_argument("--max-iterations", type=int, default=None)
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
 
@@ -82,6 +84,8 @@ def train(
     dataset_name: str,
     prompt_run: Optional[str],
     force: bool,
+    output_mode: Optional[str] = None,
+    max_iterations: Optional[int] = None,
 ) -> Path:
     bootstrap_prompt_learning(config)
     from src.datasets.common import get_dataloader, maybe_dictionarize
@@ -93,7 +97,8 @@ def train(
     dataset = dataset_spec(config, dataset_name)
     if mode == "DTE" and not prompt_run:
         raise ValueError("--DTE requires --prompt-run.")
-    output_path = vision_checkpoint_path(config, model, dataset, mode, prompt_run)
+    checkpoint_mode = output_mode or mode
+    output_path = vision_checkpoint_path(config, model, dataset, checkpoint_mode, prompt_run)
     if output_path.is_file() and not force:
         print(f"Skipping existing {mode} checkpoint: {output_path}")
         return output_path
@@ -172,12 +177,16 @@ def train(
     started_at = datetime.now(timezone.utc).isoformat()
     print_every = int(config.get("runtime", {}).get("print_every", 100))
 
+    stop_training = False
     for epoch in range(epochs):
         classifier.train()
         classifier.classification_head.eval()
         train_loss = 0.0
         train_batches = 0
         for batch_index, batch in enumerate(loader):
+            if max_iterations is not None and total_iterations >= max_iterations:
+                stop_training = True
+                break
             iteration_started = time.time()
             step = batch_index + epoch * len(loader)
             scheduler(step)
@@ -203,16 +212,18 @@ def train(
             if step % print_every == 0:
                 batch_flops = tracker.profile_for_batch(int(labels.size(0)))
                 print(
-                    f"{mode} {dataset['name']} epoch={epoch + 1}/{epochs} "
+                    f"{checkpoint_mode} {dataset['name']} epoch={epoch + 1}/{epochs} "
                     f"batch={batch_index}/{len(loader)} loss={loss.item():.6f} "
                     f"FLOPs/iter={format_flops(batch_flops['flops_per_iteration'])}",
                     flush=True,
                 )
 
+        if train_batches == 0:
+            break
         validation = _evaluate(classifier, dataset_object, args, device)
         mean_train_loss = train_loss / train_batches if train_batches else 0.0
         print(
-            f"{mode} validation {dataset['name']} epoch={epoch + 1}/{epochs} "
+            f"{checkpoint_mode} validation {dataset['name']} epoch={epoch + 1}/{epochs} "
             f"accuracy={100.0 * validation['accuracy']:.2f}% "
             f"train_loss={mean_train_loss:.6f} val_loss={validation['loss']:.6f}",
             flush=True,
@@ -229,6 +240,7 @@ def train(
                 model,
                 {
                     "mode": mode,
+                    "checkpoint_mode": checkpoint_mode,
                     "dataset": dataset["name"],
                     "train_dataset": dataset["train_dataset"],
                     "prompt_run": prompt_run,
@@ -237,15 +249,20 @@ def train(
                     "best_accuracy": best_accuracy,
                 },
             )
+        if stop_training:
+            break
 
     finished_at = datetime.now(timezone.utc).isoformat()
+    if best_epoch < 0:
+        raise RuntimeError(f"{checkpoint_mode} training completed without a best checkpoint.")
     flop_metrics = tracker.snapshot()
     metrics = {
         "model": model["name"],
         "model_id": model["id"],
         "dataset": dataset["name"],
         "train_dataset": dataset["train_dataset"],
-        "training_method": mode,
+        "training_method": checkpoint_mode,
+        "base_training_method": mode,
         "prompt_run": prompt_run,
         "source_prompt_head": str(source_prompt_head) if source_prompt_head else None,
         "checkpoint_path": str(output_path),
@@ -258,6 +275,7 @@ def train(
         "best_accuracy": best_accuracy,
         "iterations_to_best": iterations_to_best,
         "total_iterations": total_iterations,
+        "max_iterations": max_iterations,
         "time_to_best_seconds": seconds_to_best,
         "total_training_seconds": training_seconds,
         "flops_to_best": best_flops.get("total_training_flops"),
@@ -273,7 +291,7 @@ def train(
         metrics,
         key_fields=("model_id", "dataset", "training_method", "prompt_run"),
     )
-    print(f"Saved best {mode} encoder to {output_path}")
+    print(f"Saved best {checkpoint_mode} encoder to {output_path}")
     return output_path
 
 
@@ -287,6 +305,8 @@ def main() -> None:
         cli_args.dataset,
         cli_args.prompt_run,
         cli_args.force,
+        output_mode=cli_args.output_mode,
+        max_iterations=cli_args.max_iterations,
     )
 
 

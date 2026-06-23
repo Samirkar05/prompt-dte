@@ -106,6 +106,8 @@ def train_prompt_worker(
     dataset_name: str,
     run_id: str,
     force: bool,
+    output_run_id: Optional[str] = None,
+    max_iterations: Optional[int] = None,
 ) -> None:
     bootstrap_prompt_learning(config)
     from src.datasets.common import get_dataloader, maybe_dictionarize
@@ -115,13 +117,15 @@ def train_prompt_worker(
 
     model = model_spec(config, model_id)
     dataset = dataset_spec(config, dataset_name)
-    run = prompt_run_spec(config, run_id)
-    output_path = prompt_head_path(config, model, dataset, run_id)
+    base_run = prompt_run_spec(config, run_id)
+    run = copy.deepcopy(base_run)
+    run["id"] = output_run_id or run_id
+    output_path = prompt_head_path(config, model, dataset, run["id"])
     if output_path.is_file() and not force:
         print(f"Skipping existing prompt head: {output_path}")
         return
 
-    set_seed(config, offset=stable_seed_offset(model_id, dataset_name, run_id))
+    set_seed(config, offset=stable_seed_offset(model_id, dataset_name, run["id"]))
     device = configured_device(config)
     clip_model, train_preprocess, _ = create_clip_model(config, model)
     clip_model = clip_model.to(device).eval()
@@ -173,10 +177,16 @@ def train_prompt_worker(
     best_context = None
     started_at = datetime.now(timezone.utc).isoformat()
 
+    stop_training = False
     for epoch in range(epochs):
         classifier.train()
         classifier.clip_model.eval()
+        epoch_had_training = False
         for batch_index, batch in enumerate(loader):
+            if max_iterations is not None and total_iterations >= max_iterations:
+                stop_training = True
+                break
+            epoch_had_training = True
             iteration_started = time.time()
             step = batch_index + epoch * len(loader)
             scheduler(step)
@@ -206,6 +216,8 @@ def train_prompt_worker(
                     flush=True,
                 )
 
+        if not epoch_had_training:
+            break
         classifier.eval()
         classifier.clip_model.eval()
         validation_loader = get_dataloader(
@@ -240,6 +252,7 @@ def train_prompt_worker(
                 "dataset": dataset["name"],
                 "train_dataset": dataset["train_dataset"],
                 "run_id": run["id"],
+                "source_run_id": run_id,
                 "best_epoch": best_epoch,
                 "epochs_to_best": best_epoch + 1,
                 "total_epochs": epochs,
@@ -247,6 +260,8 @@ def train_prompt_worker(
                 "iterations_to_best": iterations_to_best,
             }
             _save_prompt_artifacts(config, model, dataset, run, classifier, partial_metrics)
+        if stop_training:
+            break
 
     finished_at = datetime.now(timezone.utc).isoformat()
     if best_context is None:
@@ -261,6 +276,7 @@ def train_prompt_worker(
         "dataset": dataset["name"],
         "train_dataset": dataset["train_dataset"],
         "run_id": run["id"],
+        "source_run_id": run_id,
         "training_method": "prompt_learning",
         "lr": float(run["lr"]),
         "batch_size": int(run["batch_size"]),
@@ -273,11 +289,12 @@ def train_prompt_worker(
         "total_iterations": total_iterations,
         "time_to_best_seconds": seconds_to_best,
         "total_training_seconds": training_seconds,
+        "max_iterations": max_iterations,
         "flops_to_best": best_flops.get("total_training_flops"),
         "forward_flops_to_best": best_flops.get("total_forward_flops"),
         "backward_flops_to_best": best_flops.get("total_backward_flops"),
-        "prompt_learner_path": str(prompt_learner_path(config, model, dataset, run_id)),
-        "prompt_head_path": str(prompt_head_path(config, model, dataset, run_id)),
+        "prompt_learner_path": str(prompt_learner_path(config, model, dataset, run["id"])),
+        "prompt_head_path": str(prompt_head_path(config, model, dataset, run["id"])),
         "run_started_at": started_at,
         "run_finished_at": finished_at,
     }
@@ -450,7 +467,7 @@ def dte_tasks(
                     "--model",
                     model["id"],
                     "--dataset",
-                    dataset["name"],
+                    dataset["train_dataset"],
                     "--prompt-run",
                     run_id,
                 ]
@@ -494,7 +511,7 @@ def visionft_tasks(
                 "--model",
                 model["id"],
                 "--dataset",
-                dataset["name"],
+                dataset["train_dataset"],
             ]
             if force:
                 command.append("--force")
@@ -605,6 +622,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default=None)
     parser.add_argument("--dataset", default=None)
     parser.add_argument("--prompt-run", default=None)
+    parser.add_argument("--output-prompt-run", default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--max-iterations", type=int, default=None, help=argparse.SUPPRESS)
     return parser.parse_args()
 
 
@@ -617,7 +636,15 @@ def main() -> None:
     if args.prompt_worker:
         if not args.model or not args.dataset or not args.prompt_run:
             raise ValueError("Prompt worker requires --model, --dataset, and --prompt-run.")
-        train_prompt_worker(config, args.model, args.dataset, args.prompt_run, args.force)
+        train_prompt_worker(
+            config,
+            args.model,
+            args.dataset,
+            args.prompt_run,
+            args.force,
+            output_run_id=args.output_prompt_run,
+            max_iterations=args.max_iterations,
+        )
         return
 
     if args.stage in {"all", "prompt"}:
