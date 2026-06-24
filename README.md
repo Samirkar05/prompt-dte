@@ -184,6 +184,8 @@ Budget merge evaluation writes one row per dataset/method to `<results_root>/bud
 Merged budget encoders are saved under `<checkpoints_root>/budget_runs/<experiment-id>/<model>/merged/budget/`.
 The continuously refreshed LaTeX tables are written to `<logs_root>/budget_runs/<experiment-id>/<model>/budget_results_table.txt` and `.tex`.
 The table uses fixed task subsets: 8 tasks (`EuroSAT`, `DTD`, `Cars`, `SUN397`, `SVHN`, `RESISC45`, `MNIST`, `GTSRB`), 14 tasks, and all 20 configured tasks.
+The per-dataset stage progress table is also refreshed as metrics become available:
+`<logs_root>/budget_runs/<experiment-id>/<model>/budget_progress_table.md` and `.tex`.
 
 ## Artifacts
 

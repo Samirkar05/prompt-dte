@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Sequence
 import torch
 
 from budget_merging import merge_state
+from flop_tracking import format_flops
 from pipeline_utils import (
     bootstrap_prompt_learning,
     build_normal_head,
@@ -183,6 +184,12 @@ def budget_merged_path(
 def read_json(path: Path) -> Dict[str, Any]:
     with path.open("r", encoding="utf-8") as input_file:
         return json.load(input_file)
+
+
+def read_json_if_exists(path: Path) -> Optional[Dict[str, Any]]:
+    if not path.is_file():
+        return None
+    return read_json(path)
 
 
 def read_jsonl(path: Path) -> List[Dict[str, Any]]:
@@ -452,6 +459,13 @@ def budget_prompt_tasks(
     return tasks
 
 
+def refresh_progress_for_scope(config: Dict[str, Any], args: argparse.Namespace, run_id: str) -> None:
+    if args.dry_run:
+        return
+    for model in selected_models(config, args.model):
+        refresh_progress_table(config, model, selected_datasets(config, args.dataset), run_id)
+
+
 def run_prompt_stage(
     config: Dict[str, Any],
     config_path: Path,
@@ -464,6 +478,7 @@ def run_prompt_stage(
         config,
         args.dry_run,
     )
+    refresh_progress_for_scope(config, args, run_id)
 
 
 def run_visionft_stage(
@@ -477,6 +492,7 @@ def run_visionft_stage(
         config,
         args.dry_run,
     )
+    refresh_progress_for_scope(config, args, run_id=selected_prompt_run(config, args.prompt_run))
 
 
 def run_budget_stage(
@@ -505,7 +521,11 @@ def run_budget_stage(
             f"DTE(even)={len(even_tasks)} DTE(dataset)={len(dataset_tasks)} "
             f"prompt-rebudget={len(prompt_tasks_for_negative)}"
         )
+        if not args.dry_run:
+            refresh_progress_table(config, model, datasets, run_id)
         run_tasks(even_tasks + dataset_tasks + prompt_tasks_for_negative, config, args.dry_run)
+        if not args.dry_run:
+            refresh_progress_table(config, model, datasets, run_id)
 
 
 def source_paths_for_approach(
@@ -901,6 +921,7 @@ def run_evaluate_stage(
         for approach in (APPROACH_EVEN, APPROACH_DATASET):
             for method in methods:
                 evaluate_merged_method(config, model, datasets, plan, approach, method, args.force)
+        refresh_progress_table(config, model, datasets, run_id)
 
 
 TABLE_METHODS = [
@@ -1136,6 +1157,169 @@ def refresh_results_table(
     output_dir.mkdir(parents=True, exist_ok=True)
     text_path.write_text(latex, encoding="utf-8")
     tex_path.write_text(latex, encoding="utf-8")
+
+
+PROGRESS_COLUMNS = [
+    "Dataset",
+    "Row",
+    "Best Ep",
+    "Bwd/Iter",
+    "Bwd@Best",
+    "Bwd Budget",
+    "Time@Best",
+    "Best Acc",
+]
+
+
+def metric_cell(metrics: Optional[Dict[str, Any]], key: str, default: str = "---") -> str:
+    if not metrics or metrics.get(key) is None:
+        return default
+    return str(metrics[key])
+
+
+def progress_epoch(metrics: Optional[Dict[str, Any]]) -> str:
+    if not metrics:
+        return "---"
+    value = metrics.get("epochs_to_best")
+    if value is None and metrics.get("best_epoch") is not None:
+        value = int(metrics["best_epoch"]) + 1
+    return str(value) if value is not None else "---"
+
+
+def progress_flops(metrics: Optional[Dict[str, Any]], key: str) -> str:
+    if not metrics or metrics.get(key) is None:
+        return "---"
+    return format_flops(float(metrics[key]))
+
+
+def progress_time(metrics: Optional[Dict[str, Any]]) -> str:
+    if not metrics or metrics.get("time_to_best_seconds") is None:
+        return "---"
+    return f"{float(metrics['time_to_best_seconds']):.1f}s"
+
+
+def progress_accuracy(metrics: Optional[Dict[str, Any]]) -> str:
+    if not metrics or metrics.get("best_accuracy") is None:
+        return "---"
+    return f"{100.0 * float(metrics['best_accuracy']):.2f}%"
+
+
+def progress_row(
+    dataset_name: str,
+    row_name: str,
+    metrics: Optional[Dict[str, Any]],
+    budget: Optional[float] = None,
+) -> List[str]:
+    return [
+        dataset_name,
+        row_name,
+        progress_epoch(metrics),
+        progress_flops(metrics, "backward_flops_per_iteration"),
+        progress_flops(metrics, "backward_flops_to_best"),
+        format_flops(float(budget)) if budget is not None else "---",
+        progress_time(metrics),
+        progress_accuracy(metrics),
+    ]
+
+
+def progress_latex_escape(value: str) -> str:
+    return (
+        value.replace("\\", "\\textbackslash{}")
+        .replace("&", "\\&")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+
+
+def progress_table_paths(config: Dict[str, Any], model: Dict[str, Any]) -> tuple[Path, Path]:
+    output_dir = Path(config["paths"]["logs_root"]) / safe_token(model["id"])
+    return output_dir / "budget_progress_table.md", output_dir / "budget_progress_table.tex"
+
+
+def progress_plan_lookup(plan: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    if not plan:
+        return {}
+    return {row["dataset"]: row for row in plan.get("datasets", [])}
+
+
+def refresh_progress_table(
+    config: Dict[str, Any],
+    model: Dict[str, Any],
+    datasets: Sequence[Dict[str, Any]],
+    run_id: str,
+) -> None:
+    plan = read_json_if_exists(budget_plan_path(config, model, run_id))
+    plan_by_dataset = progress_plan_lookup(plan)
+    rows = []
+    for dataset in datasets:
+        dataset_name = dataset["name"]
+        prompt_metrics = read_json_if_exists(prompt_metrics_path(config, model, dataset, run_id))
+        vision_metrics = read_json_if_exists(
+            vision_metrics_path(vision_checkpoint_path(config, model, dataset, "VisionFT"))
+        )
+        even_metrics = read_json_if_exists(
+            vision_metrics_path(vision_checkpoint_path(config, model, dataset, MODE_EVEN, run_id))
+        )
+        plan_row = plan_by_dataset.get(dataset_name, {})
+        rows.append(progress_row(dataset_name, "Prompt learning", prompt_metrics))
+        rows.append(progress_row(dataset_name, "VisionFT", vision_metrics))
+        rows.append(
+            progress_row(
+                dataset_name,
+                "DTE (Alg 1)",
+                even_metrics,
+                budget=plan_row.get("even_budget"),
+            )
+        )
+        if bool(plan_row.get("negative_budget")):
+            budget_run = budget_prompt_run_id(run_id)
+            alg2_metrics = read_json_if_exists(
+                prompt_metrics_path(config, model, dataset, budget_run)
+            )
+            rows.append(
+                progress_row(
+                    dataset_name,
+                    "Prompt learning (Alg 2)",
+                    alg2_metrics,
+                    budget=plan_row.get("visionft_backward_to_best"),
+                )
+            )
+        else:
+            alg2_metrics = read_json_if_exists(
+                vision_metrics_path(
+                    vision_checkpoint_path(config, model, dataset, MODE_DATASET, run_id)
+                )
+            )
+            rows.append(
+                progress_row(
+                    dataset_name,
+                    "DTE (Alg 2)",
+                    alg2_metrics,
+                    budget=plan_row.get("dataset_budget"),
+                )
+            )
+
+    markdown_lines = [
+        "| " + " | ".join(PROGRESS_COLUMNS) + " |",
+        "| " + " | ".join(["---"] * len(PROGRESS_COLUMNS)) + " |",
+    ]
+    markdown_lines.extend("| " + " | ".join(row) + " |" for row in rows)
+
+    latex_lines = [
+        "\\begin{tabular}{llcccccc}",
+        "\\toprule",
+        " & ".join(f"\\textbf{{{progress_latex_escape(column)}}}" for column in PROGRESS_COLUMNS)
+        + " \\\\",
+        "\\midrule",
+    ]
+    for row in rows:
+        latex_lines.append(" & ".join(progress_latex_escape(value) for value in row) + " \\\\")
+    latex_lines.extend(["\\bottomrule", "\\end{tabular}"])
+
+    markdown_path, latex_path = progress_table_paths(config, model)
+    markdown_path.parent.mkdir(parents=True, exist_ok=True)
+    markdown_path.write_text("\n".join(markdown_lines) + "\n", encoding="utf-8")
+    latex_path.write_text("\n".join(latex_lines) + "\n", encoding="utf-8")
 
 
 def main() -> None:
