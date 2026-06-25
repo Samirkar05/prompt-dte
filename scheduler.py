@@ -331,9 +331,14 @@ def run_tasks(
     gpus = configured_gpus(config)
     if not gpus:
         raise RuntimeError("No GPUs are available for scheduled tasks.")
-    max_parallel = min(
-        len(gpus), int(config.get("scheduler", {}).get("max_parallel", len(gpus)))
+    configured_parallel = config.get("scheduler", {}).get("max_parallel")
+    max_parallel = (
+        len(gpus)
+        if configured_parallel is None
+        else min(len(gpus), int(configured_parallel))
     )
+    if max_parallel <= 0:
+        raise RuntimeError("scheduler.max_parallel must be positive or null.")
     available = list(gpus[:max_parallel])
     pending = list(tasks)
     active = []

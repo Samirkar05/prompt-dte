@@ -1,6 +1,7 @@
 import argparse
 import json
 import math
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -71,6 +72,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-pre-val", dest="pre_val", action="store_false")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--eval-worker",
+        choices=["pre_val", "merged"],
+        default=None,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--approach",
+        choices=[APPROACH_EVEN, APPROACH_DATASET],
+        default=None,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument("--merge-method", default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--task-subset", default=None, help=argparse.SUPPRESS)
     return parser.parse_args()
 
 
@@ -139,7 +154,11 @@ def apply_experiment_namespace(config: Dict[str, Any], experiment_id: str) -> No
     if budget_config.get("namespace_outputs", True) is False:
         return
     for key in ("checkpoints_root", "results_root", "logs_root"):
-        config["paths"][key] = str(Path(config["paths"][key]) / "budget_runs" / experiment_id)
+        root = Path(config["paths"][key])
+        if len(root.parts) >= 2 and root.parts[-2:] == ("budget_runs", experiment_id):
+            config["paths"][key] = str(root)
+        else:
+            config["paths"][key] = str(root / "budget_runs" / experiment_id)
 
 
 def materialize_experiment_config(config: Dict[str, Any], dry_run: bool) -> Path:
@@ -171,13 +190,15 @@ def budget_merged_path(
     approach: str,
     method: str,
     run_id: str,
+    task_subset: Optional[str] = None,
 ) -> Path:
+    subset_prefix = f"{safe_token(task_subset)}_" if task_subset else ""
     return (
         model_root(config, model)
         / "merged"
         / "budget"
         / safe_token(approach)
-        / f"{safe_token(method)}_{safe_token(run_id)}.pt"
+        / f"{subset_prefix}{safe_token(method)}_{safe_token(run_id)}.pt"
     )
 
 
@@ -205,6 +226,13 @@ def read_jsonl(path: Path) -> List[Dict[str, Any]]:
     return rows
 
 
+def atomic_write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary_path.write_text(text, encoding="utf-8")
+    os.replace(temporary_path, path)
+
+
 def find_evaluation_record(
     config: Dict[str, Any],
     model: Dict[str, Any],
@@ -212,6 +240,7 @@ def find_evaluation_record(
     approach: str,
     merge_method: str,
     base_prompt_run: str,
+    task_subset: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     for row in read_jsonl(budget_results_path(config, model)):
         if (
@@ -220,6 +249,7 @@ def find_evaluation_record(
             and row.get("approach") == approach
             and row.get("merge_method") == merge_method
             and row.get("base_prompt_run") == base_prompt_run
+            and row.get("task_subset") == task_subset
         ):
             return row
     return None
@@ -233,7 +263,14 @@ def upsert_evaluation_record(
     upsert_jsonl(
         budget_results_path(config, model),
         record,
-        key_fields=("model_id", "dataset", "approach", "merge_method", "base_prompt_run"),
+        key_fields=(
+            "model_id",
+            "dataset",
+            "approach",
+            "merge_method",
+            "base_prompt_run",
+            "task_subset",
+        ),
     )
 
 
@@ -570,6 +607,7 @@ def evaluation_record_payload(
     prompt_run: Optional[str],
     batch_size: int,
     metrics: Dict[str, Any],
+    task_subset: Optional[str] = None,
     **extra: Any,
 ) -> Dict[str, Any]:
     record = {
@@ -581,6 +619,7 @@ def evaluation_record_payload(
         "merge_method": merge_method,
         "prompt_run": prompt_run,
         "base_prompt_run": base_prompt_run,
+        "task_subset": task_subset,
         "batch_size": batch_size,
         "top1": metrics["top1"],
         "samples": metrics["samples"],
@@ -801,93 +840,323 @@ def evaluate_merged_method(
     approach: str,
     method: str,
     force: bool,
+    task_subset_filter: Optional[str] = None,
 ) -> None:
     device = configured_device(config)
-    merge_config = config.get("budget_scheduler", {}).get("merge", {})
-    pending_datasets = [
-        dataset
-        for dataset in datasets
-        if force
-        or not find_evaluation_record(
-            config, model, dataset, approach, method, plan["prompt_run"]
-        )
-    ]
-    if not pending_datasets:
-        print(f"[SKIP] {model['id']} {approach} {method}: already evaluated")
-        return
-    source_paths = source_paths_for_approach(config, model, datasets, plan, approach)
-    existing_sources = [path for path in source_paths if path.is_file()]
-    if len(existing_sources) != len(source_paths):
-        missing = len(source_paths) - len(existing_sources)
-        print(f"[SKIP] {model['id']} {approach} {method}: missing {missing} DTE checkpoint(s)")
-        return
-    if not existing_sources:
-        print(f"[SKIP] {model['id']} {approach} {method}: no DTE checkpoints")
-        return
+    batch_size = int(config.get("evaluation", {}).get("batch_size", 128))
+    matched_subset = False
+    for subset_label, subset_datasets in table_task_subsets(datasets):
+        if task_subset_filter is not None and subset_label != task_subset_filter:
+            continue
+        matched_subset = True
+        if not subset_datasets:
+            continue
+        pending_datasets = [
+            dataset
+            for dataset in subset_datasets
+            if force
+            or not find_evaluation_record(
+                config,
+                model,
+                dataset,
+                approach,
+                method,
+                plan["prompt_run"],
+                task_subset=subset_label,
+            )
+        ]
+        if not pending_datasets:
+            print(f"[SKIP] {model['id']} {approach} {method} {subset_label}: already evaluated")
+            continue
 
-    output_path = budget_merged_path(config, model, approach, method, plan["prompt_run"])
-    if output_path.is_file() and not force:
-        payload = torch.load(output_path, map_location="cpu")
-    else:
-        payload = merge_state(
-            method,
+        source_paths = source_paths_for_approach(config, model, subset_datasets, plan, approach)
+        existing_sources = [path for path in source_paths if path.is_file()]
+        if len(existing_sources) != len(source_paths):
+            missing = len(source_paths) - len(existing_sources)
+            print(
+                f"[SKIP] {model['id']} {approach} {method} {subset_label}: "
+                f"missing {missing} DTE checkpoint(s)"
+            )
+            continue
+        if not existing_sources:
+            print(f"[SKIP] {model['id']} {approach} {method} {subset_label}: no DTE checkpoints")
+            continue
+
+        output_path = budget_merged_path(
             config,
             model,
-            existing_sources,
-            device,
-            task_arithmetic_scale=merge_config.get("task_arithmetic_scale"),
-            tsv_m_scale=float(merge_config.get("tsv_m_scale", 1.0)),
-            iso_c_scale=float(merge_config.get("iso_c_scale", 1.0)),
+            approach,
+            method,
+            plan["prompt_run"],
+            task_subset=subset_label,
         )
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        torch.save(payload, output_path)
+        if output_path.is_file() and not force:
+            payload = torch.load(output_path, map_location="cpu")
+        else:
+            task_arithmetic_scale = merge_scale_for_subset(config, method, subset_label)
+            tsv_m_scale = merge_scale_for_subset(config, "tsv_m", subset_label)
+            iso_c_scale = merge_scale_for_subset(config, "iso_c", subset_label)
+            payload = merge_state(
+                method,
+                config,
+                model,
+                existing_sources,
+                device,
+                task_arithmetic_scale=task_arithmetic_scale,
+                tsv_m_scale=float(tsv_m_scale),
+                iso_c_scale=float(iso_c_scale),
+            )
+            payload.setdefault("metadata", {})
+            payload["metadata"].update(
+                {
+                    "task_subset": subset_label,
+                    "subset_datasets": [dataset["name"] for dataset in subset_datasets],
+                }
+            )
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(payload, output_path)
 
-    encoder = vision_encoder_from_payload(config, model, payload, device)
-    top1_values = []
-    batch_size = int(config.get("evaluation", {}).get("batch_size", 128))
-    for dataset in pending_datasets:
+        encoder = vision_encoder_from_payload(config, model, payload, device)
+        top1_values = []
+        for dataset in pending_datasets:
+            prompt_run = prompt_run_for_evaluation(plan, dataset, approach)
+            head_path = prompt_head_path(config, model, dataset, prompt_run)
+            if not head_path.is_file():
+                print(
+                    f"[SKIP] {model['id']} {approach} {method} {subset_label} "
+                    f"{dataset['name']}: missing {head_path}"
+                )
+                continue
+            head = classification_head_from_payload(torch.load(head_path, map_location="cpu")).to(device)
+            metrics = evaluate_classifier(
+                config,
+                model,
+                dataset["eval_dataset"],
+                encoder,
+                head,
+                batch_size,
+                data_location=dataset_location(config, dataset),
+            )
+            record = evaluation_record_payload(
+                model,
+                dataset,
+                approach,
+                method,
+                plan["prompt_run"],
+                prompt_run,
+                batch_size,
+                metrics,
+                task_subset=subset_label,
+                merged_checkpoint=str(output_path),
+                vision_merge_sources=[str(path) for path in existing_sources],
+                source_count=len(existing_sources),
+                subset_datasets=[dataset["name"] for dataset in subset_datasets],
+            )
+            top1_values.append(metrics["top1"])
+            upsert_evaluation_record(config, model, record)
+            refresh_results_table(config, model, datasets, plan["prompt_run"])
+        if top1_values:
+            mean_top1 = 100.0 * sum(top1_values) / len(top1_values)
+            print(
+                f"{model['id']} {approach} {method} {subset_label}: "
+                f"mean_top1={mean_top1:.2f}% datasets={len(top1_values)} sources={len(existing_sources)}"
+            )
+    if task_subset_filter is not None and not matched_subset:
+        print(f"[SKIP] {model['id']} {approach} {method} {task_subset_filter}: unknown subset")
+
+
+def evaluation_task_log(config: Dict[str, Any], model: Dict[str, Any], label: str) -> Path:
+    return (
+        Path(config["paths"]["logs_root"])
+        / safe_token(model["id"])
+        / "evaluate"
+        / f"{safe_token(label)}.log"
+    )
+
+
+def pre_validation_task_needed(
+    config: Dict[str, Any],
+    model: Dict[str, Any],
+    dataset: Dict[str, Any],
+    plan: Dict[str, Any],
+    force: bool,
+) -> bool:
+    if force:
+        return True
+    base_prompt_run = plan["prompt_run"]
+    if (
+        find_evaluation_record(config, model, dataset, "baseline", "vision_ft", base_prompt_run)
+        is None
+        and vision_checkpoint_path(config, model, dataset, "VisionFT").is_file()
+    ):
+        return True
+    for approach in (APPROACH_EVEN, APPROACH_DATASET):
         prompt_run = prompt_run_for_evaluation(plan, dataset, approach)
         head_path = prompt_head_path(config, model, dataset, prompt_run)
-        if not head_path.is_file():
-            print(f"[SKIP] {model['id']} {approach} {method} {dataset['name']}: missing {head_path}")
-            continue
-        head = classification_head_from_payload(torch.load(head_path, map_location="cpu")).to(device)
-        metrics = evaluate_classifier(
+        if (
+            find_evaluation_record(
+                config, model, dataset, approach, "prompt_learning", base_prompt_run
+            )
+            is None
+            and head_path.is_file()
+        ):
+            return True
+        mode = MODE_EVEN if approach == APPROACH_EVEN else MODE_DATASET
+        if (
+            find_evaluation_record(config, model, dataset, approach, "dte", base_prompt_run)
+            is None
+            and head_path.is_file()
+            and vision_checkpoint_path(config, model, dataset, mode, base_prompt_run).is_file()
+        ):
+            return True
+    return False
+
+
+def merged_evaluation_task_needed(
+    config: Dict[str, Any],
+    model: Dict[str, Any],
+    subset_datasets: Sequence[Dict[str, Any]],
+    plan: Dict[str, Any],
+    approach: str,
+    method: str,
+    task_subset: str,
+    force: bool,
+) -> bool:
+    if force:
+        return True
+    return any(
+        find_evaluation_record(
             config,
-            model,
-            dataset["eval_dataset"],
-            encoder,
-            head,
-            batch_size,
-            data_location=dataset_location(config, dataset),
-        )
-        record = evaluation_record_payload(
             model,
             dataset,
             approach,
             method,
             plan["prompt_run"],
-            prompt_run,
-            batch_size,
-            metrics,
-            merged_checkpoint=str(output_path),
-            vision_merge_sources=[str(path) for path in existing_sources],
-            source_count=len(existing_sources),
+            task_subset=task_subset,
         )
-        top1_values.append(metrics["top1"])
-        upsert_evaluation_record(config, model, record)
-        refresh_results_table(config, model, datasets, plan["prompt_run"])
-    if top1_values:
-        mean_top1 = 100.0 * sum(top1_values) / len(top1_values)
-        print(
-            f"{model['id']} {approach} {method}: "
-            f"mean_top1={mean_top1:.2f}% datasets={len(top1_values)} sources={len(existing_sources)}"
+        is None
+        for dataset in subset_datasets
+    )
+
+
+def evaluation_tasks(
+    config: Dict[str, Any],
+    source_config_path: Path,
+    experiment_id: str,
+    model: Dict[str, Any],
+    datasets: Sequence[Dict[str, Any]],
+    plan: Dict[str, Any],
+    run_id: str,
+    methods: Sequence[str],
+    pre_val: bool,
+    force: bool,
+    dataset_filter: Optional[str],
+) -> List[Task]:
+    tasks: List[Task] = []
+    script = Path(__file__).resolve()
+    base_command = [
+        sys.executable,
+        str(script),
+        "--config",
+        str(source_config_path),
+        "--stage",
+        "evaluate",
+        "--experiment-id",
+        experiment_id,
+        "--model",
+        model["id"],
+        "--prompt-run",
+        run_id,
+    ]
+    if force:
+        base_command.append("--force")
+
+    if pre_val:
+        for dataset in datasets:
+            if not pre_validation_task_needed(config, model, dataset, plan, force):
+                continue
+            label = f"EvalPreVal:{model['id']}:{dataset['name']}"
+            command = [
+                *base_command,
+                "--eval-worker",
+                "pre_val",
+                "--dataset",
+                dataset["name"],
+            ]
+            tasks.append(Task(label, command, evaluation_task_log(config, model, label)))
+
+    for approach in (APPROACH_EVEN, APPROACH_DATASET):
+        for method in methods:
+            for subset_label, subset_datasets in table_task_subsets(datasets):
+                if not subset_datasets or not merged_evaluation_task_needed(
+                    config,
+                    model,
+                    subset_datasets,
+                    plan,
+                    approach,
+                    method,
+                    subset_label,
+                    force,
+                ):
+                    continue
+                label = f"EvalMerged:{model['id']}:{approach}:{method}:{subset_label}"
+                command = [
+                    *base_command,
+                    "--eval-worker",
+                    "merged",
+                    "--approach",
+                    approach,
+                    "--merge-method",
+                    method,
+                    "--task-subset",
+                    subset_label,
+                ]
+                if dataset_filter is not None:
+                    command.extend(["--dataset", dataset_filter])
+                tasks.append(Task(label, command, evaluation_task_log(config, model, label)))
+    return tasks
+
+
+def run_evaluation_worker(config: Dict[str, Any], args: argparse.Namespace, run_id: str) -> None:
+    if args.model is None:
+        raise ValueError("Evaluation workers require --model.")
+    model = model_spec(config, args.model)
+    datasets = selected_datasets(config, args.dataset)
+    plan_path = budget_plan_path(config, model, run_id)
+    if not plan_path.is_file():
+        raise FileNotFoundError(f"Evaluation worker requires an existing budget plan: {plan_path}")
+    plan = read_json(plan_path)
+
+    if args.eval_worker == "pre_val":
+        if len(datasets) != 1:
+            raise ValueError("pre_val evaluation workers require exactly one --dataset.")
+        run_pre_validation(config, model, datasets, plan, args.force)
+    elif args.eval_worker == "merged":
+        if args.approach is None or args.merge_method is None or args.task_subset is None:
+            raise ValueError("merged evaluation workers require --approach, --merge-method, and --task-subset.")
+        selected_methods(config, [args.merge_method])
+        evaluate_merged_method(
+            config,
+            model,
+            datasets,
+            plan,
+            args.approach,
+            args.merge_method,
+            args.force,
+            task_subset_filter=args.task_subset,
         )
+    else:
+        raise ValueError(f"Unknown evaluation worker: {args.eval_worker}")
+
+    refresh_results_table(config, model, config["datasets"], run_id)
+    refresh_progress_table(config, model, datasets, run_id)
 
 
 def run_evaluate_stage(
     config: Dict[str, Any],
     args: argparse.Namespace,
+    source_config_path: Path,
+    experiment_id: str,
     run_id: str,
     methods: Sequence[str],
     pre_val: bool,
@@ -908,20 +1177,24 @@ def run_evaluate_stage(
                 raise
             if not args.dry_run:
                 write_json(plan_path, plan)
-        if args.dry_run:
-            for approach in (APPROACH_EVEN, APPROACH_DATASET):
-                sources = source_paths_for_approach(config, model, datasets, plan, approach)
-                print(
-                    f"[DRY RUN] evaluate {model['id']} {approach}: "
-                    f"methods={','.join(methods)} sources={len(sources)}"
-                )
-            continue
-        if pre_val:
-            run_pre_validation(config, model, datasets, plan, args.force)
-        for approach in (APPROACH_EVEN, APPROACH_DATASET):
-            for method in methods:
-                evaluate_merged_method(config, model, datasets, plan, approach, method, args.force)
-        refresh_progress_table(config, model, datasets, run_id)
+        tasks = evaluation_tasks(
+            config,
+            source_config_path,
+            experiment_id,
+            model,
+            datasets,
+            plan,
+            run_id,
+            methods,
+            pre_val,
+            args.force,
+            args.dataset,
+        )
+        print(f"{model['id']} evaluation tasks: {len(tasks)}")
+        run_tasks(tasks, config, args.dry_run)
+        if not args.dry_run:
+            refresh_results_table(config, model, config["datasets"], run_id)
+            refresh_progress_table(config, model, datasets, run_id)
 
 
 TABLE_METHODS = [
@@ -987,6 +1260,33 @@ RESULT_TASK_SUBSETS = [
     ),
 ]
 
+TASK_ARITHMETIC_SCALE = 0.3
+TSV_M_SCALES = {"8 Tasks": 1.0, "14 Tasks": 1.0, "20 Tasks": 0.8}
+ISO_C_SCALES = {"8 Tasks": 1.3, "14 Tasks": 1.0, "20 Tasks": 0.9}
+
+
+def merge_scale_for_subset(
+    config: Dict[str, Any],
+    method: str,
+    task_subset: str,
+) -> Optional[float]:
+    merge_config = config.get("budget_scheduler", {}).get("merge", {})
+    if method == "task_arithmetic":
+        value = merge_config.get("task_arithmetic_scale", TASK_ARITHMETIC_SCALE)
+        return TASK_ARITHMETIC_SCALE if value is None else float(value)
+    if method == "tsv_m":
+        configured = merge_config.get("tsv_m_scales", TSV_M_SCALES)
+        if not isinstance(configured, dict):
+            configured = TSV_M_SCALES
+        return float(configured.get(task_subset, TSV_M_SCALES[task_subset]))
+    if method == "iso_c":
+        configured = merge_config.get("iso_c_scales", ISO_C_SCALES)
+        if not isinstance(configured, dict):
+            configured = ISO_C_SCALES
+        return float(configured.get(task_subset, ISO_C_SCALES[task_subset]))
+    return None
+
+
 def table_task_subsets(datasets: Sequence[Dict[str, Any]]) -> List[tuple[str, List[Dict[str, Any]]]]:
     by_name = {dataset["name"]: dataset for dataset in datasets}
     subsets = []
@@ -1001,6 +1301,7 @@ def table_record(
     approach: str,
     method: str,
     base_prompt_run: str,
+    task_subset: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     for row in rows:
         if (
@@ -1008,6 +1309,7 @@ def table_record(
             and row.get("approach") == approach
             and row.get("merge_method") == method
             and row.get("base_prompt_run") == base_prompt_run
+            and row.get("task_subset") == task_subset
         ):
             return row
     return None
@@ -1027,13 +1329,15 @@ def denominator_record(
 def table_cell_values(
     rows: Sequence[Dict[str, Any]],
     datasets: Sequence[Dict[str, Any]],
+    task_subset: str,
     approach: str,
     method: str,
     base_prompt_run: str,
 ) -> Optional[Dict[str, float]]:
     lookup_approach = "baseline" if method == "vision_ft" else approach
+    lookup_subset = task_subset if method in MERGE_TABLE_METHODS else None
     method_rows = [
-        table_record(rows, dataset, lookup_approach, method, base_prompt_run)
+        table_record(rows, dataset, lookup_approach, method, base_prompt_run, lookup_subset)
         for dataset in datasets
     ]
     if any(row is None for row in method_rows):
@@ -1084,8 +1388,8 @@ def latex_table_for_approach(
     values_by_method = {}
     for method, _ in TABLE_METHODS:
         values_by_method[method] = []
-        for _, subset in subsets:
-            values = table_cell_values(rows, subset, approach, method, base_prompt_run)
+        for subset_label, subset in subsets:
+            values = table_cell_values(rows, subset, subset_label, approach, method, base_prompt_run)
             values_by_method[method].append(values)
 
     best_merge_by_column = {}
@@ -1155,8 +1459,8 @@ def refresh_results_table(
     text_path = output_dir / "budget_results_table.txt"
     tex_path = output_dir / "budget_results_table.tex"
     output_dir.mkdir(parents=True, exist_ok=True)
-    text_path.write_text(latex, encoding="utf-8")
-    tex_path.write_text(latex, encoding="utf-8")
+    atomic_write_text(text_path, latex)
+    atomic_write_text(tex_path, latex)
 
 
 PROGRESS_COLUMNS = [
@@ -1318,8 +1622,8 @@ def refresh_progress_table(
 
     markdown_path, latex_path = progress_table_paths(config, model)
     markdown_path.parent.mkdir(parents=True, exist_ok=True)
-    markdown_path.write_text("\n".join(markdown_lines) + "\n", encoding="utf-8")
-    latex_path.write_text("\n".join(latex_lines) + "\n", encoding="utf-8")
+    atomic_write_text(markdown_path, "\n".join(markdown_lines) + "\n")
+    atomic_write_text(latex_path, "\n".join(latex_lines) + "\n")
 
 
 def main() -> None:
@@ -1327,7 +1631,6 @@ def main() -> None:
     config, _ = load_config(args.config)
     experiment_id = resolve_experiment_id(config, args)
     apply_experiment_namespace(config, experiment_id)
-    config_path = materialize_experiment_config(config, args.dry_run)
     print(
         f"Experiment ID: {experiment_id} | "
         f"checkpoints={config['paths']['checkpoints_root']} | "
@@ -1335,6 +1638,12 @@ def main() -> None:
     )
     bootstrap_prompt_learning(config)
     run_id = selected_prompt_run(config, args.prompt_run)
+    if args.eval_worker is not None:
+        run_evaluation_worker(config, args, run_id)
+        return
+
+    config_path = materialize_experiment_config(config, args.dry_run)
+    source_config_path = Path(args.config).expanduser().resolve()
     methods = selected_methods(config, args.methods)
     pre_val = (
         bool(config.get("budget_scheduler", {}).get("pre_val", True))
@@ -1355,7 +1664,15 @@ def main() -> None:
                 return
             raise
     if args.stage in {"all", "evaluate"}:
-        run_evaluate_stage(config, args, run_id, methods, pre_val)
+        run_evaluate_stage(
+            config,
+            args,
+            source_config_path,
+            experiment_id,
+            run_id,
+            methods,
+            pre_val,
+        )
 
 
 if __name__ == "__main__":

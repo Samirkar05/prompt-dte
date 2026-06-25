@@ -43,6 +43,7 @@ python budget_scheduler.py --config config.cgeorgakilas.json --stage evaluate --
 ```
 
 This computes only missing evaluation rows. Existing rows are skipped.
+Evaluation uses all visible GPUs by default in `config.cgeorgakilas.json` because `scheduler.gpus` and `scheduler.max_parallel` are `null`.
 
 ## Force Recompute Same Experiment
 
@@ -74,6 +75,8 @@ Important files:
 
 The LaTeX table is refreshed during `evaluate` as soon as new result rows are written.
 The progress table is refreshed after prompt, VisionFT, budget, and evaluation updates.
+The 8/14/20 task columns use separately merged backbones from exactly those task subsets.
+Task arithmetic uses scale `0.3`; TSV-M uses scales `1.0`, `1.0`, `0.8`; Iso-C uses scales `1.3`, `1.0`, `0.9` for 8/14/20 tasks.
 
 ## Notes
 

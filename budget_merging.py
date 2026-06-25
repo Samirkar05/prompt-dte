@@ -87,7 +87,7 @@ def task_arithmetic_state(
 ) -> Dict[str, torch.Tensor]:
     if not task_vectors:
         raise ValueError("At least one task vector is required.")
-    scale = (1.0 / len(task_vectors)) if scaling is None else float(scaling)
+    scale = 0.3 if scaling is None else float(scaling)
     summed = {}
     for key in task_vectors[0].vector:
         summed[key] = sum(task_vector.vector[key].float() for task_vector in task_vectors)
@@ -205,7 +205,7 @@ def merge_state(
         scaling = None
     elif method == "task_arithmetic":
         merged_state = task_arithmetic_state(base_state, task_vectors, task_arithmetic_scale)
-        scaling = (1.0 / len(task_vectors)) if task_arithmetic_scale is None else task_arithmetic_scale
+        scaling = 0.3 if task_arithmetic_scale is None else task_arithmetic_scale
     elif method == "tsv_m":
         vector = tsv_m_vector(task_vectors, merge_config)
         merged_state = _state_from_vector(base_state, vector, tsv_m_scale)

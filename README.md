@@ -165,6 +165,7 @@ Stages are `prompt`, `VisionFT`, `budget`, and `evaluate`; `all` is the default.
 Use `--dry-run` to preview scheduled training commands and `--force` to recompute existing artifacts.
 Every budget run is isolated under `budget_runs/<experiment-id>/`; without `--experiment-id`, `all` and `prompt` create a new timestamped experiment, while later single stages reuse the latest budget experiment.
 The `evaluate` stage runs cached pre-validation by default: VisionFT, prompt learning, and dataset-specific DTE. Disable it with `--no-pre-val`.
+Evaluation is scheduled across all visible GPUs when `scheduler.gpus` and `scheduler.max_parallel` are `null`; set either field to restrict GPU use.
 During `evaluate`, the LaTeX table is refreshed immediately after each new result row is written.
 
 Resume or evaluate a specific budget run:
@@ -180,10 +181,12 @@ Budget definitions:
 - Budgeted DTE iterations: `budget / VisionFT backward FLOPs per iteration`, floored to full iterations.
 - Negative per-dataset budget: skip that dataset’s DTE encoder for merging and train a budget-limited prompt head instead.
 
-Budget merge evaluation writes one row per dataset/method to `<results_root>/budget_runs/<experiment-id>/<model>/budget_evaluations.jsonl`.
+Budget merge evaluation writes one row per dataset/method/task-subset to `<results_root>/budget_runs/<experiment-id>/<model>/budget_evaluations.jsonl`.
 Merged budget encoders are saved under `<checkpoints_root>/budget_runs/<experiment-id>/<model>/merged/budget/`.
 The continuously refreshed LaTeX tables are written to `<logs_root>/budget_runs/<experiment-id>/<model>/budget_results_table.txt` and `.tex`.
 The table uses fixed task subsets: 8 tasks (`EuroSAT`, `DTD`, `Cars`, `SUN397`, `SVHN`, `RESISC45`, `MNIST`, `GTSRB`), 14 tasks, and all 20 configured tasks.
+Each table column uses a separately merged backbone from exactly that task subset.
+Task arithmetic uses `0.3 * sum(task_vectors) + pretrained`; TSV-M scales are `[1.0, 1.0, 0.8]` for `[8, 14, 20]` tasks; Iso-C scales are `[1.3, 1.0, 0.9]`.
 The per-dataset stage progress table is also refreshed as metrics become available:
 `<logs_root>/budget_runs/<experiment-id>/<model>/budget_progress_table.md` and `.tex`.
 

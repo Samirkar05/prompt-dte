@@ -18,7 +18,7 @@
   },
   "scheduler": {
     "gpus": null,
-    "max_parallel": 4,
+    "max_parallel": null,
     "poll_seconds": 2
   },
   "models": [
@@ -95,9 +95,17 @@
       "iso_c"
     ],
     "merge": {
-      "task_arithmetic_scale": null,
-      "tsv_m_scale": 1.0,
-      "iso_c_scale": 1.0
+      "task_arithmetic_scale": 0.3,
+      "tsv_m_scales": {
+        "8 Tasks": 1.0,
+        "14 Tasks": 1.0,
+        "20 Tasks": 0.8
+      },
+      "iso_c_scales": {
+        "8 Tasks": 1.3,
+        "14 Tasks": 1.0,
+        "20 Tasks": 0.9
+      }
     }
   }
 }
